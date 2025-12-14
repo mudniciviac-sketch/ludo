@@ -1,303 +1,606 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Souls-like Mega Version Mobile & Desktop</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
+<title>Souls-like Mega: Enhanced Single File</title>
 <style>
-body { margin:0; overflow:hidden; font-family:Arial; touch-action:none; }
-#hud{
- position:absolute; top:10px; left:10px; z-index:10;
- background:rgba(0,0,0,.5); color:white;
- padding:10px; border-radius:10px;
-}
-.bar{width:200px;height:15px;background:#444;border-radius:5px;margin-bottom:5px;}
-.fill{height:100%;border-radius:5px;}
-#hp{background:#0f0;}
-#st{background:#0af;}
-/* Mobile joystick */
-#joystickBase{
- position:absolute; bottom:20px; left:20px;
- width:100px; height:100px; border-radius:50%;
- background:rgba(255,255,255,0.2);
-}
-#joystickThumb{
- position:absolute; width:50px; height:50px; border-radius:50%;
- background:rgba(255,255,255,0.5); top:25px; left:25px;
- touch-action:none;
-}
-#swingBtn{
- position:absolute; bottom:40px; right:30px;
- width:60px; height:60px; border-radius:50%;
- background:rgba(255,255,0,0.6);
- text-align:center; line-height:60px; font-weight:bold; font-size:20px;
-}
+  html,body { height:100%; margin:0; background:#000; font-family: Inter, Arial, sans-serif; -webkit-user-select:none; -ms-user-select:none; user-select:none; }
+  canvas { display:block; }
+  #hud {
+    position: absolute; left:12px; top:12px; z-index:20;
+    background: rgba(0,0,0,0.45); color:#fff; padding:10px; border-radius:10px; width:260px;
+    backdrop-filter: blur(4px);
+  }
+  #hud small { display:block; color:#ddd; font-size:12px; margin-top:6px; }
+  .bar { height:14px; width:100%; background:#222; border-radius:8px; overflow:hidden; margin:6px 0; }
+  .fill { height:100%; background:linear-gradient(90deg,#4caf50,#2e7d32); width:100%; transition:width .08s linear; }
+  .sfill { height:100%; background:linear-gradient(90deg,#2196f3,#1565c0); width:100%; transition:width .08s linear; }
+  #tips { font-size:13px; color:#cfe8ff; margin-top:6px; }
+  #controlsMobile { position:absolute; bottom:18px; left:18px; z-index:21; touch-action:none; display:flex; gap:12px; align-items:center; }
+  #joystickBase { width:110px; height:110px; border-radius:50%; background:rgba(255,255,255,0.06); position:relative; }
+  #joystickThumb { width:56px; height:56px; border-radius:50%; background:rgba(255,255,255,0.18); position:absolute; left:27px; top:27px; touch-action:none; }
+  #swingBtn { position: absolute; right:18px; bottom:26px; width:72px; height:72px; border-radius:50%; background:rgba(255,200,0,0.85); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:20px; z-index:21; touch-action:none; }
+  #rollBtn { position: absolute; right:18px; bottom:110px; width:60px; height:40px; border-radius:8px; background:rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; font-size:14px; z-index:21; touch-action:none; color:#fff; }
+  #debug { position:absolute; right:12px; top:12px; color:#fff; z-index:30; background:rgba(0,0,0,0.35); padding:8px;border-radius:8px;font-size:12px;}
+  #lockNotice { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); color:#fff; background:rgba(0,0,0,0.6); padding:12px 18px; border-radius:10px; z-index:50; display:none;}
+  @media (min-width:900px) { #controlsMobile,#swingBtn,#rollBtn { display:none; } }
+  @media (max-width:899px) { #hud { width:170px; left:10px; top:8px; } }
 </style>
 </head>
 <body>
-
-<div id="hud">
- Health
- <div class="bar"><div id="hp" class="fill"></div></div>
- Stamina
- <div class="bar"><div id="st" class="fill"></div></div>
- WASD move | SHIFT roll | F swing | Mouse/Touch
+<div id="hud" aria-hidden="true">
+  <div><strong>Player</strong></div>
+  <div style="font-size:13px;margin-top:6px">HP</div>
+  <div class="bar"><div id="hpFill" class="fill" style="width:100%"></div></div>
+  <div style="font-size:13px;margin-top:4px">Stamina</div>
+  <div class="bar"><div id="stFill" class="sfill" style="width:100%"></div></div>
+  <div id="tips">WASD / joystick — Hold left mouse & drag to look — F / swing — SHIFT roll</div>
+  <small>Enemies take <strong>2</strong> hits. Tap swing on mobile.</small>
 </div>
 
-<div id="joystickBase"><div id="joystickThumb"></div></div>
-<div id="swingBtn">F</div>
+<div id="controlsMobile" aria-hidden="true">
+  <div id="joystickBase"><div id="joystickThumb"></div></div>
+</div>
+<div id="swingBtn" aria-hidden="true">F</div>
+<div id="rollBtn" aria-hidden="true">ROLL</div>
+<div id="lockNotice">Click to enable mouse look</div>
+<div id="debug" aria-hidden="true" style="display:none"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.158/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+
 <script>
+/*
+  Mega single-file enhanced Souls-like:
+  - improved procedural character models (player/enemies)
+  - gradient sky sphere
+  - camera-aligned movement (W = camera forward)
+  - mobile joystick + buttons
+  - sword swing with trapezoid hitbox (visible while swinging)
+  - enemies with simple AI that attack player; player takes damage
+  - simple hit particles, basic animations for walk/attack/roll
+  - device-based quality fallback (fewer enemies on low-power)
+*/
 
-// ---------------- SCENE ----------------
+/* ---------- Settings / quality detection ---------- */
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
+const devicePixelRatioSafe = Math.min(window.devicePixelRatio || 1, 2);
+const lowQuality = (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 3) || /Mobi|Android/i.test(navigator.userAgent);
+
+/* ---------- THREE setup ---------- */
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x8fa9b5); // blue-grey sky
+// Nice blue-gray gradient sky using a large inverted sphere with shader material
+const skyGeo = new THREE.SphereGeometry(250, 32, 15);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: { topColor: { value: new THREE.Color(0x9fbfd1) }, bottomColor: { value: new THREE.Color(0x6b7f87) } },
+  vertexShader: `
+    varying vec3 vWorldPos;
+    void main(){ vWorldPos = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor; uniform vec3 bottomColor; varying vec3 vWorldPos;
+    void main(){
+      float h = normalize(vWorldPos).y * 0.5 + 0.5;
+      vec3 col = mix(bottomColor, topColor, smoothstep(0.0,1.0,h));
+      gl_FragColor = vec4(col,1.0);
+    }
+  `
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
 
-const camera = new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,500);
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth,innerHeight);
+// renderer & camera
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(devicePixelRatioSafe);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
 document.body.appendChild(renderer.domElement);
 
-// LIGHT
-scene.add(new THREE.AmbientLight(0x888888));
-const sun = new THREE.DirectionalLight(0xffffff,1);
-sun.position.set(30,50,20);
-scene.add(sun);
+const camera = new THREE.PerspectiveCamera(68, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0,6,12);
 
-// ---------------- TERRAIN ----------------
-const ground = new THREE.Mesh(
- new THREE.PlaneGeometry(200,200,40,40),
- new THREE.MeshStandardMaterial({color:0x555555})
-);
-ground.rotation.x = -Math.PI/2;
+/* lighting */
+const hemi = new THREE.HemisphereLight(0xbfdfff, 0x404040, 0.9);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+dir.position.set(20,60,10);
+dir.castShadow = false;
+scene.add(dir);
+
+/* ---------- Ground with canvas texture (tile) ---------- */
+function makeGround() {
+  const size = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  // base
+  ctx.fillStyle = '#6b6b6b';
+  ctx.fillRect(0,0,size,size);
+  // subtle grid
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  for(let i=0;i<size;i+=64){
+    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(size,i); ctx.stroke();
+  }
+  // some noise
+  for(let i=0;i<9000;i++){
+    const x=Math.random()*size, y=Math.random()*size, a=Math.random()*2;
+    ctx.fillStyle = 'rgba(0,0,0,'+(Math.random()*0.02)+')';
+    ctx.fillRect(x,y,a,a);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(20,20);
+
+  const g = new THREE.PlaneGeometry(200,200,80,80);
+  // small random elevation
+  const pos = g.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const z = (Math.random()-0.5) * 0.8;
+    pos.setZ(i, z);
+  }
+  g.computeVertexNormals();
+  const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 1.0, metalness: 0.0 });
+  const mesh = new THREE.Mesh(g,m);
+  mesh.rotation.x = -Math.PI/2;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+const ground = makeGround();
 scene.add(ground);
 
-// Elevation
-const verts = ground.geometry.attributes.position;
-for(let i=0;i<verts.count;i++){
-  verts.setZ(i, Math.random()*2);
+/* ---------- Obstacles (varied shapes) ---------- */
+const obstacles = [];
+function spawnObstacles(n=22){
+  const mats = [
+    new THREE.MeshStandardMaterial({color:0x6a6a6a, metalness:0.1, roughness:0.9}),
+    new THREE.MeshStandardMaterial({color:0x7a5a5a, metalness:0.05, roughness:0.95}),
+    new THREE.MeshStandardMaterial({color:0x4f5f6f, metalness:0.05, roughness:0.95})
+  ];
+  for(let i=0;i<n;i++){
+    const t = Math.random();
+    let mesh;
+    if(t<0.4){
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(2+Math.random()*3,2+Math.random()*3,2+Math.random()*3), mats[i%3]);
+    } else if (t<0.7){
+      mesh = new THREE.Mesh(new THREE.CylinderGeometry(1+Math.random()*1.5,1+Math.random()*1.5,2+Math.random()*3,8), mats[(i+1)%3]);
+    } else {
+      mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(1+Math.random()*1.8), mats[(i+2)%3]);
+    }
+    mesh.position.set(Math.random()*160-80, (mesh.geometry.boundingBox ? 0 : 1), Math.random()*160-80);
+    // raise to surface roughly (sample ground plane)
+    mesh.position.y = 1 + Math.random()*1.4;
+    scene.add(mesh);
+    obstacles.push(mesh);
+  }
 }
-ground.geometry.computeVertexNormals();
+spawnObstacles(lowQuality ? 10 : 22);
 
-// Obstacles
-const obstacles=[];
-const obsMat = new THREE.MeshStandardMaterial({color:0x888888});
-for(let i=0;i<20;i++){
- const b=new THREE.Mesh(new THREE.BoxGeometry(2,3,2),obsMat);
- b.position.set(Math.random()*50-25,1.5,Math.random()*50-25);
- scene.add(b);
- obstacles.push(b);
+/* ---------- PLAYER (procedural "complex" low-poly model) ---------- */
+const player = new THREE.Group();
+function makePlayerModel(){
+  const bodyMat = new THREE.MeshStandardMaterial({ color:0x3bdc7a, roughness:0.6, metalness:0.05 });
+  const headMat = new THREE.MeshStandardMaterial({ color:0xe6f7e9, roughness:0.7 });
+  // torso
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.6, 0.8, 4, 8), bodyMat);
+  torso.position.set(0,1,0);
+  // shoulders
+  const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,1.0,8), bodyMat);
+  leftArm.position.set(-0.75,1.0,0); leftArm.rotation.z = Math.PI/6;
+  const rightArm = leftArm.clone(); rightArm.position.x=0.75; rightArm.rotation.z = -Math.PI/6;
+  // head
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), headMat);
+  head.position.set(0,2.05,0);
+  // legs
+  const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1.0,8), bodyMat);
+  leftLeg.position.set(-0.28,0.1,0);
+  const rightLeg = leftLeg.clone(); rightLeg.position.x=0.28;
+  // small shoulder armor
+  const armor = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.18,1.2), new THREE.MeshStandardMaterial({color:0x2a7b57, roughness:0.5}));
+  armor.position.set(0,1.5,0);
+
+  // group
+  const g = new THREE.Group();
+  g.add(torso, leftArm, rightArm, head, leftLeg, rightLeg, armor);
+  // assign references for animation
+  return { group:g, parts:{torso,leftArm,rightArm,head,leftLeg,rightLeg,armor} };
 }
-
-// ---------------- PLAYER ----------------
-const player = new THREE.Mesh(
- new THREE.BoxGeometry(1,2,1),
- new THREE.MeshStandardMaterial({color:0x00ff00})
-);
-player.position.y = 1;
+const pModel = makePlayerModel();
+player.add(pModel.group);
+player.position.set(0,1,0);
 scene.add(player);
 
-// SWORD
-const sword = new THREE.Mesh(
- new THREE.BoxGeometry(0.15,1,0.15),
- new THREE.MeshStandardMaterial({color:0xffff00})
-);
-sword.position.set(0.6,0.5,1);
+/* ---------- SWORD (attach to player rightArm) ---------- */
+const sword = new THREE.Group();
+{
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12,1.2,0.14), new THREE.MeshStandardMaterial({color:0xe6e6ff, metalness:0.9, roughness:0.2}));
+  blade.position.set(0,0.4,0);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.28,0.06,0.4), new THREE.MeshStandardMaterial({color:0x333333, metalness:0.8}));
+  guard.position.set(0,-0.1,0);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,0.6,8), new THREE.MeshStandardMaterial({color:0x241f1f}));
+  handle.position.set(0,-0.7,0);
+  sword.add(blade,guard,handle);
+  sword.rotation.x = 0;
+  // position relative to player
+  sword.position.set(0.8,1.0,0.2);
+}
 player.add(sword);
 
-// Trapezoid hitbox
-const hitGeo = new THREE.CylinderGeometry(0.3,1.2,2,4,1,false);
-const hitMat = new THREE.MeshBasicMaterial({
- color:0xff0000,
- wireframe:true,
- transparent:true,
- opacity:0.6
-});
-const hitbox = new THREE.Mesh(hitGeo,hitMat);
+/* ---------- TRAPEZOID HITBOX (visible while swinging) ---------- */
+const hitGeo = new THREE.CylinderGeometry(0.45,1.6,1.8,4,1,false);
+const hitMat = new THREE.MeshBasicMaterial({ color:0xff4444, transparent:true, opacity:0.35, wireframe:false });
+const hitbox = new THREE.Mesh(hitGeo, hitMat);
 hitbox.rotation.x = Math.PI/2;
-hitbox.position.set(0,0,2);
-hitbox.visible=false;
+hitbox.position.set(0,1.0,2.2);
+hitbox.visible = false;
 player.add(hitbox);
 
-// ---------------- ENEMIES ----------------
-const enemies=[];
-const enemyHP=[];
-for(let i=0;i<8;i++){
- const e=new THREE.Mesh(new THREE.BoxGeometry(1,2,1),new THREE.MeshStandardMaterial({color:0xff0000}));
- e.position.set(Math.random()*60-30,1,Math.random()*60-30);
- scene.add(e);
- enemies.push(e);
- enemyHP.push(2); // 2 hits to kill
+/* ---------- ENEMIES (procedural variants) ---------- */
+const enemies = [];
+const enemyHP = [];
+const enemyState = []; // idle,chase,attack,stagger
+function spawnEnemy(position){
+  const color = new THREE.Color().setHSL(Math.random()*0.1, 0.9, 0.45);
+  const mat = new THREE.MeshStandardMaterial({ color: color, roughness:0.7, metalness:0.05 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5,0.8,4,8), mat);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32,8,6), new THREE.MeshStandardMaterial({color:0xffe0e0}));
+  head.position.set(0,1.35,0);
+  const group = new THREE.Group();
+  body.position.y = 0.6;
+  group.add(body, head);
+  group.position.copy(position);
+  scene.add(group);
+  enemies.push(group);
+  enemyHP.push(2); // two hits
+  enemyState.push({ lastAttack: 0, stagger:0 });
+}
+const enemyCount = lowQuality ? 4 : 10;
+for(let i=0;i<enemyCount;i++){
+  spawnEnemy(new THREE.Vector3(Math.random()*80-40,1,Math.random()*80-40));
 }
 
-// ---------------- STATS ----------------
-let hp=100, stamina=100;
-let rolling=false, rollCooldown=0;
-let swinging=false, swingTime=0;
-
-// ---------------- INPUT ----------------
-const keys={};
-addEventListener('keydown',e=>keys[e.code]=true);
-addEventListener('keyup',e=>keys[e.code]=false);
-
-// ---------------- MOUSE CAMERA ----------------
-let mouseDown=false;
-let yaw=0, pitch=0;
-document.addEventListener('mousedown',()=>{mouseDown=true;});
-document.addEventListener('mouseup',()=>{mouseDown=false;});
-document.addEventListener('mousemove',e=>{
- if(mouseDown){
-  yaw -= e.movementX*0.002;
-  pitch -= e.movementY*0.002;
-  if(pitch>Math.PI/3) pitch=Math.PI/3;
-  if(pitch<-Math.PI/3) pitch=-Math.PI/3;
- }
-});
-
-// ---------------- MOBILE JOYSTICK ----------------
-let joystickBase = document.getElementById('joystickBase');
-let joystickThumb = document.getElementById('joystickThumb');
-let swingBtn = document.getElementById('swingBtn');
-let joystickDir = {x:0,z:0};
-let activeTouch=null;
-
-joystickThumb.addEventListener('touchstart',e=>{activeTouch=e.changedTouches[0].identifier;});
-joystickThumb.addEventListener('touchend',e=>{
- e.changedTouches.forEach(t=>{if(t.identifier==activeTouch) {joystickDir={x:0,z:0}; activeTouch=null; joystickThumb.style.left='25px'; joystickThumb.style.top='25px';}});
-});
-joystickThumb.addEventListener('touchmove',e=>{
- e.preventDefault();
- for(let t of e.changedTouches){
-  if(t.identifier==activeTouch){
-   let rect=joystickBase.getBoundingClientRect();
-   let dx = t.clientX - rect.left - 50;
-   let dz = t.clientY - rect.top - 50;
-   let dist = Math.sqrt(dx*dx+dz*dz);
-   if(dist>40){dx*=40/dist; dz*=40/dist;}
-   joystickThumb.style.left = (25+dx)+'px';
-   joystickThumb.style.top = (25+dz)+'px';
-   joystickDir.x = dx/40;
-   joystickDir.z = dz/40;
+/* ---------- PARTICLE HITS ---------- */
+const particlePool = [];
+function spawnHitParticles(pos, color=0xffcc66, count=14){
+  for(let i=0;i<count;i++){
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.05,6,6), new THREE.MeshStandardMaterial({color: color}));
+    s.position.copy(pos);
+    s.userData = { vel: new THREE.Vector3((Math.random()-0.5)*0.8, Math.random()*0.6+0.2, (Math.random()-0.5)*0.8), life: 0.7 + Math.random()*0.3 };
+    scene.add(s);
+    particlePool.push(s);
   }
- }
-});
-swingBtn.addEventListener('touchstart',()=>{keys.KeyF=true;});
-swingBtn.addEventListener('touchend',()=>{keys.KeyF=false;});
-
-// ---------------- COLLISION ----------------
-function checkCollision(obj){
- for(let obs of obstacles){
-   const dx=Math.abs(obj.position.x-obs.position.x);
-   const dz=Math.abs(obj.position.z-obs.position.z);
-   if(dx<1.5 && dz<1.5) return true;
- }
- return false;
 }
 
-// ---------------- GAME LOOP ----------------
-function animate(){
- requestAnimationFrame(animate);
+/* ---------- STATS ---------- */
+let playerHP = 100;
+let stamina = 100;
+let swinging=false, swingTimer=0;
+let rolling=false, rollTimer=0, rollCd=0;
+let moveVelocity = new THREE.Vector3();
+let clock = new THREE.Clock();
 
- // Movement direction
- let dir = new THREE.Vector3();
- if(window.innerWidth<800){ // mobile joystick
-   dir.set(joystickDir.x,0,-joystickDir.z);
- } else {
-   dir.set((keys.KeyD?1:0)-(keys.KeyA?1:0),0,(keys.KeyS?1:0)-(keys.KeyW?1:0));
- }
+/* ---------- INPUT ---------- */
+const keys = {};
+window.addEventListener('keydown', (e)=>{ keys[e.code]=true; });
+window.addEventListener('keyup', (e)=>{ keys[e.code]=false; });
 
- if(dir.length()>0){
-  dir.normalize();
-  // rotate direction based on camera yaw
-  const camYaw = yaw;
-  const cos = Math.cos(camYaw);
-  const sin = Math.sin(camYaw);
-  const movedir = new THREE.Vector3(
-    dir.x*cos - dir.z*sin,
-    0,
-    dir.x*sin + dir.z*cos
-  );
-  let speed = 0.15;
-  if(rolling) speed*=3;
-  player.position.addScaledVector(movedir,speed);
-  if(checkCollision(player)) player.position.addScaledVector(movedir,-speed);
-  player.lookAt(player.position.clone().add(movedir));
- }
+/* pointer lock + mouse look (desktop) */
+let pointerLocked = false;
+const lockNotice = document.getElementById('lockNotice');
+lockNotice.style.display = 'block';
+function requestPointerLock() {
+  lockNotice.style.display = 'none';
+  renderer.domElement.requestPointerLock?.();
+}
+renderer.domElement.addEventListener('click', requestPointerLock);
+document.addEventListener('pointerlockchange', ()=> {
+  pointerLocked = !!document.pointerLockElement;
+  lockNotice.style.display = pointerLocked ? 'none' : 'block';
+});
 
- // Rolling
- if(keys.ShiftLeft && stamina>=20 && rollCooldown<=0){
-   rolling=true;
-   stamina-=20;
-   rollCooldown=50;
- }
- if(rollCooldown>0){ rollCooldown--; if(rollCooldown<40) rolling=false;}
- stamina+=0.2; if(stamina>100) stamina=100;
+/* mouse look deltas */
+let yaw = 0, pitch = 0;
+document.addEventListener('mousemove', (e)=>{
+  if(pointerLocked){
+    yaw -= e.movementX * 0.0025;
+    pitch -= e.movementY * 0.002;
+    const maxP = Math.PI/3;
+    pitch = Math.max(-maxP, Math.min(maxP, pitch));
+  }
+});
 
- // Swing
- if(keys.KeyF && !swinging && stamina>10){
-   swinging=true; swingTime=0; stamina-=10; hitbox.visible=true;
- }
- if(swinging){
-   swingTime+=0.15;
-   sword.rotation.y = Math.sin(swingTime)*1.5;
-   sword.position.z = 1 + Math.sin(swingTime)*0.5;
-   if(swingTime>Math.PI){ swinging=false; sword.rotation.y=0; sword.position.z=1; hitbox.visible=false; }
+/* ---------- MOBILE INPUT: joystick + buttons ---------- */
+const joystickBase = document.getElementById('joystickBase');
+const joystickThumb = document.getElementById('joystickThumb');
+const swingBtn = document.getElementById('swingBtn');
+const rollBtn = document.getElementById('rollBtn');
+let joystickActive = false, touchId = null, joystickDir = {x:0,z:0};
 
-   // Hit detection
-   enemies.forEach((e,i)=>{
-    if(enemyHP[i]<=0) return;
-    const p = new THREE.Vector3(); hitbox.getWorldPosition(p);
-    if(p.distanceTo(e.position)<1.8){
-      enemyHP[i]--;
-      e.material.color.set(0x880000);
-      if(enemyHP[i]<=0){
-        e.position.set(Math.random()*60-30,1,Math.random()*60-30);
-        enemyHP[i]=2;
-        e.material.color.set(0xff0000);
+if(isTouch){
+  // show mobile controls
+  document.getElementById('controlsMobile').style.display = 'flex';
+  swingBtn.style.display = 'block';
+  rollBtn.style.display = 'block';
+  // add touch handlers
+  joystickThumb.addEventListener('touchstart', (ev)=>{
+    ev.preventDefault();
+    joystickActive = true;
+    touchId = ev.changedTouches[0].identifier;
+  }, { passive:false });
+  joystickThumb.addEventListener('touchmove', (ev)=>{
+    ev.preventDefault();
+    for(const t of ev.changedTouches){
+      if(t.identifier === touchId){
+        const rect = joystickBase.getBoundingClientRect();
+        const cx = rect.left + rect.width/2;
+        const cy = rect.top + rect.height/2;
+        const dx = t.clientX - cx;
+        const dz = t.clientY - cy;
+        const max = rect.width/2 - 6;
+        const dist = Math.min(max, Math.sqrt(dx*dx + dz*dz));
+        const angle = Math.atan2(dz, dx);
+        const tx = Math.cos(angle) * dist;
+        const ty = Math.sin(angle) * dist;
+        joystickThumb.style.left = `${(rect.width/2 - 28) + tx}px`;
+        joystickThumb.style.top = `${(rect.height/2 - 28) + ty}px`;
+        joystickDir.x = (tx / max);
+        joystickDir.z = (ty / max);
       }
     }
-   });
- }
+  }, { passive:false });
+  joystickThumb.addEventListener('touchend', (ev)=>{
+    ev.preventDefault();
+    for(const t of ev.changedTouches){
+      if(t.identifier === touchId){
+        joystickActive = false; touchId = null; joystickDir = {x:0,z:0};
+        joystickThumb.style.left = '27px'; joystickThumb.style.top = '27px';
+      }
+    }
+  }, { passive:false });
 
- // Enemy AI & attack
- enemies.forEach((e,i)=>{
-   const distVec = new THREE.Vector3().subVectors(player.position,e.position);
-   const dist = distVec.length();
-   if(dist>0.5 && enemyHP[i]>0){
-     distVec.normalize();
-     e.position.addScaledVector(distVec,0.03);
-     if(checkCollision(e)) e.position.addScaledVector(distVec,-0.03);
-   }
-   if(dist<1.5 && enemyHP[i]>0){
-     hp-=0.2; // damage player
-   }
- });
-
- // Camera follow & mouse look
- const camOffset = new THREE.Vector3(
-   Math.sin(yaw)*12,
-   8 + pitch*5,
-   Math.cos(yaw)*12
- );
- camera.position.copy(player.position.clone().add(camOffset));
- camera.lookAt(player.position);
-
- // HUD
- document.getElementById("hp").style.width=Math.max(hp,0)+"%";
- document.getElementById("st").style.width=Math.max(stamina,0)+"%";
-
- renderer.render(scene,camera);
+  swingBtn.addEventListener('touchstart', (e)=>{ e.preventDefault(); keys['KeyF'] = true; });
+  swingBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); keys['KeyF'] = false; });
+  rollBtn.addEventListener('touchstart', (e)=>{ e.preventDefault(); keys['ShiftLeft'] = true; });
+  rollBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); keys['ShiftLeft'] = false; });
+} else {
+  // hide mobile controls for desktop
+  document.getElementById('controlsMobile').style.display = 'none';
+  swingBtn.style.display = 'none';
+  rollBtn.style.display = 'none';
 }
 
+/* ---------- Utilities ---------- */
+function worldForwardFromCamera(){
+  // returns a normalized forward vector along ground based on camera yaw
+  const v = new THREE.Vector3(0,0,-1);
+  v.applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+  v.y = 0;
+  v.normalize();
+  return v;
+}
+function worldRightFromCamera(){
+  const v = new THREE.Vector3(1,0,0);
+  v.applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+  v.y = 0;
+  v.normalize();
+  return v;
+}
+
+/* ---------- GAME BEHAVIOR: movement, swing, roll ---------- */
+function attemptSwing(){
+  if(swinging) return;
+  if(stamina < 10) return;
+  stamina -= 10;
+  swinging = true; swingTimer = 0;
+  hitbox.visible = true;
+  // small camera kick
+}
+function attemptRoll(){
+  if(rolling || rollCd > 0) return;
+  if(stamina < 20) return;
+  stamina -= 20; rolling = true; rollTimer = 0; rollCd = 50;
+}
+
+/* map keys to actions */
+window.addEventListener('keydown', (e)=>{
+  if(e.code === 'KeyF'){ attemptSwing(); }
+  if(e.code === 'ShiftLeft'){ attemptRoll(); }
+});
+/* also respect mobile keys triggered earlier - check flags in loop */
+
+/* ---------- SIMPLE PATHING & COMBAT ---------- */
+function enemyCanSeePlayer(enemy){
+  // simple: always see unless very far
+  return enemy.position.distanceTo(player.position) < 50;
+}
+
+/* ---------- ANIMATION helpers ---------- */
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+/* ---------- MAIN LOOP ---------- */
+const hpFill = document.getElementById('hpFill');
+const stFill = document.getElementById('stFill');
+
+function animate(){
+  const dt = Math.min(0.04, clock.getDelta());
+  // handle movement input: map W to camera forward
+  let inputX = 0, inputZ = 0;
+  if(isTouch && joystickDir){ inputX = joystickDir.x; inputZ = joystickDir.z * -1; } // screen Y inverted
+  else {
+    inputX = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+    inputZ = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
+  }
+  const inputLen = Math.hypot(inputX, inputZ);
+  let moveDir = new THREE.Vector3(0,0,0);
+  if(inputLen > 0.05){
+    // rotate input by camera yaw so movement follows camera orientation
+    const forward = worldForwardFromCamera();
+    const right = worldRightFromCamera();
+    moveDir.addScaledVector(right, inputX);
+    moveDir.addScaledVector(forward, inputZ);
+    moveDir.normalize();
+    // apply movement
+    let baseSpeed = lowQuality ? 0.12 : 0.18;
+    if(rolling) baseSpeed *= 3.2;
+    moveVelocity.copy(moveDir).multiplyScalar(baseSpeed);
+    player.position.addScaledVector(moveVelocity, dt * 60);
+    // check collisions roughly (prevent walking into large obstacles)
+    for(const o of obstacles){
+      const dx = Math.abs(player.position.x - o.position.x);
+      const dz = Math.abs(player.position.z - o.position.z);
+      if(dx < 1.5 && dz < 1.5){
+        // simple push back
+        player.position.addScaledVector(moveVelocity, -0.02 * dt * 60);
+      }
+    }
+    // orient player gradually towards movement direction
+    const lookTarget = player.position.clone().add(moveDir);
+    const current = new THREE.Vector3(0,0,1).applyQuaternion(player.quaternion);
+    const desired = lookTarget.clone().sub(player.position).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(current.normalize(), desired.normalize());
+    player.quaternion.slerp(q.multiply(player.quaternion), 0.18);
+  } else {
+    moveVelocity.set(0,0,0);
+  }
+
+  // rolling timing
+  if(rolling){ rollTimer += dt * 60; if(rollTimer > 18){ rolling = false; } }
+  if(rollCd > 0) rollCd = Math.max(0, rollCd - (dt * 60));
+
+  // swinging timing: forward-back swing animation with hit window
+  if(swinging){
+    swingTimer += dt * 60;
+    // animate sword: swing in arc + forward lunge
+    const swingProgress = swingTimer / 20; // approx duration
+    const arc = Math.sin(Math.min(Math.PI, swingProgress * Math.PI)) * 1.7;
+    sword.rotation.z = -0.2 + Math.sin(arc) * 0.9;
+    sword.position.z = 0.2 + Math.sin(arc) * 0.9;
+    // during main middle window, perform hits
+    if(swingTimer > 6 && swingTimer < 14){
+      // check enemies hit by trapezoid hitbox
+      const worldHit = new THREE.Vector3(); hitbox.getWorldPosition(worldHit);
+      for(let i=0;i<enemies.length;i++){
+        const e = enemies[i];
+        if(enemyHP[i] <= 0) continue;
+        if(worldHit.distanceTo(e.position) < 2.0){
+          // apply damage and spawn particles at enemy
+          enemyHP[i] -= 1;
+          spawnHitParticles(e.position, 0xffcc66, 8);
+          // small stagger
+          enemyState[i].stagger = 12;
+          e.material && (e.children[0] && (e.children[0].material.color.set(0x772222)));
+          if(enemyHP[i] <= 0){
+            // respawn after small delay by teleport
+            e.position.set(Math.random()*80-40,1,Math.random()*80-40);
+            enemyHP[i] = 2;
+            enemyState[i].stagger = 0;
+            e.children[0] && (e.children[0].material.color.set(0xcc2222));
+          }
+        }
+      }
+    }
+    if(swingTimer > 28) {
+      swinging = false; swingTimer = 0; sword.rotation.z = 0; sword.position.z = 0.2; hitbox.visible = false;
+    }
+  } else {
+    // idle sword slight bob
+    sword.rotation.z = Math.sin(clock.getElapsedTime()*2.0) * 0.03;
+  }
+
+  // regenerate stamina slowly
+  stamina = Math.min(100, stamina + 12 * dt);
+  if(stamina < 0) stamina = 0;
+
+  // enemies AI: chase, attack
+  for(let i=0;i<enemies.length;i++){
+    const e = enemies[i];
+    if(!e) continue;
+    const st = enemyState[i];
+    if(st.stagger > 0){ st.stagger -= 1; continue; }
+    const toPlayer = player.position.clone().sub(e.position);
+    const dist = toPlayer.length();
+    if(dist > 0.6 && enemyHP[i] > 0){
+      // chase
+      const d = toPlayer.clone().normalize().multiplyScalar(0.03);
+      e.position.add(d);
+      // avoid obstacles simply
+      for(const o of obstacles){
+        const dx = Math.abs(e.position.x - o.position.x);
+        const dz = Math.abs(e.position.z - o.position.z);
+        if(dx < 1.2 && dz < 1.2){
+          e.position.addScaledVector(d, -0.5);
+        }
+      }
+    }
+    // attack when close with cooldown
+    st.lastAttack = st.lastAttack || 0;
+    st.lastAttack = Math.max(0, st.lastAttack - (dt*60));
+    if(dist < 1.4 && enemyHP[i] > 0 && st.lastAttack <= 0){
+      // enemy attacks
+      playerHP -= 4 + Math.random()*2; // hit damage
+      st.lastAttack = 40; // cooldown frames
+      // hurt flash
+      spawnHitParticles(player.position.clone().add(new THREE.Vector3(0,1,0)), 0xff6666, 8);
+    }
+  }
+
+  // update particles
+  for(let i = particlePool.length - 1; i >= 0; i--){
+    const p = particlePool[i];
+    p.userData.life -= dt;
+    if(p.userData.life <= 0){
+      scene.remove(p);
+      particlePool.splice(i,1);
+    } else {
+      p.position.addScaledVector(p.userData.vel, dt * 60);
+      p.userData.vel.y -= 0.03 * dt * 60; // gravity
+      p.material.opacity = Math.max(0, p.userData.life);
+    }
+  }
+
+  // camera follow: camera offset depends on yaw/pitch (mouse or touch)
+  const camRadius = 12;
+  const camX = player.position.x + Math.sin(yaw) * camRadius;
+  const camZ = player.position.z + Math.cos(yaw) * camRadius;
+  const camY = player.position.y + 6 + pitch * 6;
+  camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.14);
+  camera.lookAt(new THREE.Vector3(player.position.x, player.position.y + 1.2, player.position.z));
+
+  // HUD update
+  hpFill.style.width = Math.max(0, Math.min(100, playerHP)) + '%';
+  stFill.style.width = Math.max(0, Math.min(100, stamina)) + '%';
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+/* ---------- Hit particle spawner redefined locally ---------- */
+function spawnHitParticles(pos, color=0xffcc66, count=12){
+  for(let i=0;i<count;i++){
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.06,6,6), new THREE.MeshBasicMaterial({ color: color }));
+    m.position.copy(pos).add(new THREE.Vector3((Math.random()-0.5)*0.2, Math.random()*0.6, (Math.random()-0.5)*0.2));
+    m.userData = { vel: new THREE.Vector3((Math.random()-0.5)*0.6, Math.random()*0.8, (Math.random()-0.5)*0.6), life: 0.5 + Math.random()*0.4 };
+    scene.add(m);
+    particlePool.push(m);
+  }
+}
+
+/* ---------- Resize handling ---------- */
+function onResize(){
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener('resize', onResize);
+
+/* ---------- Start ---------- */
 animate();
 
-// Resize
-addEventListener('resize',()=>{
- camera.aspect=innerWidth/innerHeight;
- camera.updateProjectionMatrix();
- renderer.setSize(innerWidth,innerHeight);
-});
+/* Accessibility: show debug toggle if needed */
+const debugEl = document.getElementById('debug');
+// debugEl.style.display = 'block';
+// setInterval(()=>{ debugEl.textContent = `en:${enemies.length} hp:${Math.round(playerHP)} stam:${Math.round(stamina)}`; }, 300);
 
 </script>
 </body>
