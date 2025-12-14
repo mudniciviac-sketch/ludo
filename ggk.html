@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Souls-like Mega Version Mobile & Desktop</title>
+<style>
+body { margin:0; overflow:hidden; font-family:Arial; touch-action:none; }
+#hud{
+ position:absolute; top:10px; left:10px; z-index:10;
+ background:rgba(0,0,0,.5); color:white;
+ padding:10px; border-radius:10px;
+}
+.bar{width:200px;height:15px;background:#444;border-radius:5px;margin-bottom:5px;}
+.fill{height:100%;border-radius:5px;}
+#hp{background:#0f0;}
+#st{background:#0af;}
+/* Mobile joystick */
+#joystickBase{
+ position:absolute; bottom:20px; left:20px;
+ width:100px; height:100px; border-radius:50%;
+ background:rgba(255,255,255,0.2);
+}
+#joystickThumb{
+ position:absolute; width:50px; height:50px; border-radius:50%;
+ background:rgba(255,255,255,0.5); top:25px; left:25px;
+ touch-action:none;
+}
+#swingBtn{
+ position:absolute; bottom:40px; right:30px;
+ width:60px; height:60px; border-radius:50%;
+ background:rgba(255,255,0,0.6);
+ text-align:center; line-height:60px; font-weight:bold; font-size:20px;
+}
+</style>
+</head>
+<body>
+
+<div id="hud">
+ Health
+ <div class="bar"><div id="hp" class="fill"></div></div>
+ Stamina
+ <div class="bar"><div id="st" class="fill"></div></div>
+ WASD move | SHIFT roll | F swing | Mouse/Touch
+</div>
+
+<div id="joystickBase"><div id="joystickThumb"></div></div>
+<div id="swingBtn">F</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.158/build/three.min.js"></script>
+<script>
+
+// ---------------- SCENE ----------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fa9b5); // blue-grey sky
+
+const camera = new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,500);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// LIGHT
+scene.add(new THREE.AmbientLight(0x888888));
+const sun = new THREE.DirectionalLight(0xffffff,1);
+sun.position.set(30,50,20);
+scene.add(sun);
+
+// ---------------- TERRAIN ----------------
+const ground = new THREE.Mesh(
+ new THREE.PlaneGeometry(200,200,40,40),
+ new THREE.MeshStandardMaterial({color:0x555555})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+// Elevation
+const verts = ground.geometry.attributes.position;
+for(let i=0;i<verts.count;i++){
+  verts.setZ(i, Math.random()*2);
+}
+ground.geometry.computeVertexNormals();
+
+// Obstacles
+const obstacles=[];
+const obsMat = new THREE.MeshStandardMaterial({color:0x888888});
+for(let i=0;i<20;i++){
+ const b=new THREE.Mesh(new THREE.BoxGeometry(2,3,2),obsMat);
+ b.position.set(Math.random()*50-25,1.5,Math.random()*50-25);
+ scene.add(b);
+ obstacles.push(b);
+}
+
+// ---------------- PLAYER ----------------
+const player = new THREE.Mesh(
+ new THREE.BoxGeometry(1,2,1),
+ new THREE.MeshStandardMaterial({color:0x00ff00})
+);
+player.position.y = 1;
+scene.add(player);
+
+// SWORD
+const sword = new THREE.Mesh(
+ new THREE.BoxGeometry(0.15,1,0.15),
+ new THREE.MeshStandardMaterial({color:0xffff00})
+);
+sword.position.set(0.6,0.5,1);
+player.add(sword);
+
+// Trapezoid hitbox
+const hitGeo = new THREE.CylinderGeometry(0.3,1.2,2,4,1,false);
+const hitMat = new THREE.MeshBasicMaterial({
+ color:0xff0000,
+ wireframe:true,
+ transparent:true,
+ opacity:0.6
+});
+const hitbox = new THREE.Mesh(hitGeo,hitMat);
+hitbox.rotation.x = Math.PI/2;
+hitbox.position.set(0,0,2);
+hitbox.visible=false;
+player.add(hitbox);
+
+// ---------------- ENEMIES ----------------
+const enemies=[];
+const enemyHP=[];
+for(let i=0;i<8;i++){
+ const e=new THREE.Mesh(new THREE.BoxGeometry(1,2,1),new THREE.MeshStandardMaterial({color:0xff0000}));
+ e.position.set(Math.random()*60-30,1,Math.random()*60-30);
+ scene.add(e);
+ enemies.push(e);
+ enemyHP.push(2); // 2 hits to kill
+}
+
+// ---------------- STATS ----------------
+let hp=100, stamina=100;
+let rolling=false, rollCooldown=0;
+let swinging=false, swingTime=0;
+
+// ---------------- INPUT ----------------
+const keys={};
+addEventListener('keydown',e=>keys[e.code]=true);
+addEventListener('keyup',e=>keys[e.code]=false);
+
+// ---------------- MOUSE CAMERA ----------------
+let mouseDown=false;
+let yaw=0, pitch=0;
+document.addEventListener('mousedown',()=>{mouseDown=true;});
+document.addEventListener('mouseup',()=>{mouseDown=false;});
+document.addEventListener('mousemove',e=>{
+ if(mouseDown){
+  yaw -= e.movementX*0.002;
+  pitch -= e.movementY*0.002;
+  if(pitch>Math.PI/3) pitch=Math.PI/3;
+  if(pitch<-Math.PI/3) pitch=-Math.PI/3;
+ }
+});
+
+// ---------------- MOBILE JOYSTICK ----------------
+let joystickBase = document.getElementById('joystickBase');
+let joystickThumb = document.getElementById('joystickThumb');
+let swingBtn = document.getElementById('swingBtn');
+let joystickDir = {x:0,z:0};
+let activeTouch=null;
+
+joystickThumb.addEventListener('touchstart',e=>{activeTouch=e.changedTouches[0].identifier;});
+joystickThumb.addEventListener('touchend',e=>{
+ e.changedTouches.forEach(t=>{if(t.identifier==activeTouch) {joystickDir={x:0,z:0}; activeTouch=null; joystickThumb.style.left='25px'; joystickThumb.style.top='25px';}});
+});
+joystickThumb.addEventListener('touchmove',e=>{
+ e.preventDefault();
+ for(let t of e.changedTouches){
+  if(t.identifier==activeTouch){
+   let rect=joystickBase.getBoundingClientRect();
+   let dx = t.clientX - rect.left - 50;
+   let dz = t.clientY - rect.top - 50;
+   let dist = Math.sqrt(dx*dx+dz*dz);
+   if(dist>40){dx*=40/dist; dz*=40/dist;}
+   joystickThumb.style.left = (25+dx)+'px';
+   joystickThumb.style.top = (25+dz)+'px';
+   joystickDir.x = dx/40;
+   joystickDir.z = dz/40;
+  }
+ }
+});
+swingBtn.addEventListener('touchstart',()=>{keys.KeyF=true;});
+swingBtn.addEventListener('touchend',()=>{keys.KeyF=false;});
+
+// ---------------- COLLISION ----------------
+function checkCollision(obj){
+ for(let obs of obstacles){
+   const dx=Math.abs(obj.position.x-obs.position.x);
+   const dz=Math.abs(obj.position.z-obs.position.z);
+   if(dx<1.5 && dz<1.5) return true;
+ }
+ return false;
+}
+
+// ---------------- GAME LOOP ----------------
+function animate(){
+ requestAnimationFrame(animate);
+
+ // Movement direction
+ let dir = new THREE.Vector3();
+ if(window.innerWidth<800){ // mobile joystick
+   dir.set(joystickDir.x,0,-joystickDir.z);
+ } else {
+   dir.set((keys.KeyD?1:0)-(keys.KeyA?1:0),0,(keys.KeyS?1:0)-(keys.KeyW?1:0));
+ }
+
+ if(dir.length()>0){
+  dir.normalize();
+  // rotate direction based on camera yaw
+  const camYaw = yaw;
+  const cos = Math.cos(camYaw);
+  const sin = Math.sin(camYaw);
+  const movedir = new THREE.Vector3(
+    dir.x*cos - dir.z*sin,
+    0,
+    dir.x*sin + dir.z*cos
+  );
+  let speed = 0.15;
+  if(rolling) speed*=3;
+  player.position.addScaledVector(movedir,speed);
+  if(checkCollision(player)) player.position.addScaledVector(movedir,-speed);
+  player.lookAt(player.position.clone().add(movedir));
+ }
+
+ // Rolling
+ if(keys.ShiftLeft && stamina>=20 && rollCooldown<=0){
+   rolling=true;
+   stamina-=20;
+   rollCooldown=50;
+ }
+ if(rollCooldown>0){ rollCooldown--; if(rollCooldown<40) rolling=false;}
+ stamina+=0.2; if(stamina>100) stamina=100;
+
+ // Swing
+ if(keys.KeyF && !swinging && stamina>10){
+   swinging=true; swingTime=0; stamina-=10; hitbox.visible=true;
+ }
+ if(swinging){
+   swingTime+=0.15;
+   sword.rotation.y = Math.sin(swingTime)*1.5;
+   sword.position.z = 1 + Math.sin(swingTime)*0.5;
+   if(swingTime>Math.PI){ swinging=false; sword.rotation.y=0; sword.position.z=1; hitbox.visible=false; }
+
+   // Hit detection
+   enemies.forEach((e,i)=>{
+    if(enemyHP[i]<=0) return;
+    const p = new THREE.Vector3(); hitbox.getWorldPosition(p);
+    if(p.distanceTo(e.position)<1.8){
+      enemyHP[i]--;
+      e.material.color.set(0x880000);
+      if(enemyHP[i]<=0){
+        e.position.set(Math.random()*60-30,1,Math.random()*60-30);
+        enemyHP[i]=2;
+        e.material.color.set(0xff0000);
+      }
+    }
+   });
+ }
+
+ // Enemy AI & attack
+ enemies.forEach((e,i)=>{
+   const distVec = new THREE.Vector3().subVectors(player.position,e.position);
+   const dist = distVec.length();
+   if(dist>0.5 && enemyHP[i]>0){
+     distVec.normalize();
+     e.position.addScaledVector(distVec,0.03);
+     if(checkCollision(e)) e.position.addScaledVector(distVec,-0.03);
+   }
+   if(dist<1.5 && enemyHP[i]>0){
+     hp-=0.2; // damage player
+   }
+ });
+
+ // Camera follow & mouse look
+ const camOffset = new THREE.Vector3(
+   Math.sin(yaw)*12,
+   8 + pitch*5,
+   Math.cos(yaw)*12
+ );
+ camera.position.copy(player.position.clone().add(camOffset));
+ camera.lookAt(player.position);
+
+ // HUD
+ document.getElementById("hp").style.width=Math.max(hp,0)+"%";
+ document.getElementById("st").style.width=Math.max(stamina,0)+"%";
+
+ renderer.render(scene,camera);
+}
+
+animate();
+
+// Resize
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+</body>
+</html>
